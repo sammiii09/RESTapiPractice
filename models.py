@@ -1,152 +1,55 @@
-import uuid
+import binascii
+import os
 
-from django.contrib.auth.models import User
+from django.conf import settings
 from django.db import models
-from django.db.models import QuerySet
-from django.db.models.manager import BaseManager
 from django.utils.translation import gettext_lazy as _
 
 
-class RESTFrameworkModel(models.Model):
+class Token(models.Model):
     """
-    Base for test models that sets app_label, so they play nicely.
+    The default authorization token model.
     """
+    key = models.CharField(_("Key"), max_length=40, primary_key=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, related_name='auth_token',
+        on_delete=models.CASCADE, verbose_name=_("User")
+    )
+    created = models.DateTimeField(_("Created"), auto_now_add=True)
 
     class Meta:
-        app_label = 'tests'
-        abstract = True
+        # Work around for a bug in Django:
+        # https://code.djangoproject.com/ticket/19422
+        #
+        # Also see corresponding ticket:
+        # https://github.com/encode/django-rest-framework/issues/705
+        abstract = 'rest_framework.authtoken' not in settings.INSTALLED_APPS
+        verbose_name = _("Token")
+        verbose_name_plural = _("Tokens")
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            self.key = self.generate_key()
+        return super().save(*args, **kwargs)
+
+    @classmethod
+    def generate_key(cls):
+        return binascii.hexlify(os.urandom(20)).decode()
+
+    def __str__(self):
+        return self.key
 
 
-class BasicModel(RESTFrameworkModel):
-    text = models.CharField(
-        max_length=100,
-        verbose_name=_("Text comes here"),
-        help_text=_("Text description.")
-    )
-
-
-# Models for relations tests
-# ManyToMany
-class ManyToManyTarget(RESTFrameworkModel):
-    name = models.CharField(max_length=100)
-
-
-class ManyToManySource(RESTFrameworkModel):
-    name = models.CharField(max_length=100)
-    targets = models.ManyToManyField(ManyToManyTarget, related_name='sources')
-
-
-class BasicModelWithUsers(RESTFrameworkModel):
-    users = models.ManyToManyField(User)
-
-
-# ForeignKey
-class ForeignKeyTarget(RESTFrameworkModel):
-    name = models.CharField(max_length=100)
-
-    def get_first_source(self):
-        """Used for testing related field against a callable."""
-        return self.sources.all().order_by('pk')[0]
-
+class TokenProxy(Token):
+    """
+    Proxy mapping pk to user pk for use in admin.
+    """
     @property
-    def first_source(self):
-        """Used for testing related field against a property."""
-        return self.sources.all().order_by('pk')[0]
+    def pk(self):
+        return self.user_id
 
-
-class UUIDForeignKeyTarget(RESTFrameworkModel):
-    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4)
-    name = models.CharField(max_length=100)
-
-
-class ForeignKeySource(RESTFrameworkModel):
-    name = models.CharField(max_length=100)
-    target = models.ForeignKey(ForeignKeyTarget, related_name='sources',
-                               help_text='Target', verbose_name='Target',
-                               on_delete=models.CASCADE)
-
-
-class ForeignKeySourceWithLimitedChoices(RESTFrameworkModel):
-    target = models.ForeignKey(ForeignKeyTarget, help_text='Target',
-                               verbose_name='Target',
-                               limit_choices_to={"name__startswith": "limited-"},
-                               on_delete=models.CASCADE)
-
-
-class ForeignKeySourceWithQLimitedChoices(RESTFrameworkModel):
-    target = models.ForeignKey(ForeignKeyTarget, help_text='Target',
-                               verbose_name='Target',
-                               limit_choices_to=models.Q(name__startswith="limited-"),
-                               on_delete=models.CASCADE)
-
-
-# Nullable ForeignKey
-class NullableForeignKeySource(RESTFrameworkModel):
-    name = models.CharField(max_length=100)
-    target = models.ForeignKey(ForeignKeyTarget, null=True, blank=True,
-                               related_name='nullable_sources',
-                               verbose_name='Optional target object',
-                               on_delete=models.CASCADE)
-
-
-class NullableUUIDForeignKeySource(RESTFrameworkModel):
-    name = models.CharField(max_length=100)
-    target = models.ForeignKey(ForeignKeyTarget, null=True, blank=True,
-                               related_name='nullable_sources',
-                               verbose_name='Optional target object',
-                               on_delete=models.CASCADE)
-
-
-class NestedForeignKeySource(RESTFrameworkModel):
-    """
-    Used for testing FK chain. A -> B -> C.
-    """
-    name = models.CharField(max_length=100)
-    target = models.ForeignKey(NullableForeignKeySource, null=True, blank=True,
-                               related_name='nested_sources',
-                               verbose_name='Intermediate target object',
-                               on_delete=models.CASCADE)
-
-
-# OneToOne
-class OneToOneTarget(RESTFrameworkModel):
-    name = models.CharField(max_length=100)
-
-
-class NullableOneToOneSource(RESTFrameworkModel):
-    name = models.CharField(max_length=100)
-    target = models.OneToOneField(
-        OneToOneTarget, null=True, blank=True,
-        related_name='nullable_source', on_delete=models.CASCADE)
-
-
-class OneToOnePKSource(RESTFrameworkModel):
-    """ Test model where the primary key is a OneToOneField with another model. """
-    name = models.CharField(max_length=100)
-    target = models.OneToOneField(
-        OneToOneTarget, primary_key=True,
-        related_name='required_source', on_delete=models.CASCADE)
-
-
-class CustomManagerModel(RESTFrameworkModel):
-    class CustomManager:
-        def __new__(cls, *args, **kwargs):
-            cls = BaseManager.from_queryset(
-                QuerySet
-            )
-            return cls
-
-    objects = CustomManager()()
-    # `CustomManager()` will return a `BaseManager` class.
-    # We need to instantiation it, so we write `CustomManager()()` here.
-
-    text = models.CharField(
-        max_length=100,
-        verbose_name=_("Text comes here"),
-        help_text=_("Text description.")
-    )
-
-    o2o_target = models.ForeignKey(OneToOneTarget,
-                                   help_text='OneToOneTarget',
-                                   verbose_name='OneToOneTarget',
-                                   on_delete=models.CASCADE)
+    class Meta:
+        proxy = 'rest_framework.authtoken' in settings.INSTALLED_APPS
+        abstract = 'rest_framework.authtoken' not in settings.INSTALLED_APPS
+        verbose_name = _("Token")
+        verbose_name_plural = _("Tokens")
