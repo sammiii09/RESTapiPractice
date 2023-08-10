@@ -1,7 +1,10 @@
 from django.apps import AppConfig
-from django.utils.translation import gettext_lazy as _
 
 
-class AuthTokenConfig(AppConfig):
-    name = 'rest_framework.authtoken'
-    verbose_name = _("Auth Token")
+class RestFrameworkConfig(AppConfig):
+    name = 'rest_framework'
+    verbose_name = "Django REST framework"
+
+    def ready(self):
+        # Add System checks
+        from .checks import pagination_system_check  # NOQA

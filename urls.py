@@ -1,16 +1,21 @@
 """
-URLConf for test suite.
+Login and logout views for the browsable API.
 
-We need only the docs urls for DocumentationRenderer tests.
+Add these to your root URLconf if you're using the browsable API and
+your API requires authentication:
+
+    urlpatterns = [
+        ...
+        path('auth/', include('rest_framework.urls'))
+    ]
+
+You should make sure your authentication settings include `SessionAuthentication`.
 """
+from django.contrib.auth import views
 from django.urls import path
 
-from rest_framework.compat import coreapi
-from rest_framework.documentation import include_docs_urls
-
-if coreapi:
-    urlpatterns = [
-        path('docs/', include_docs_urls(title='Test Suite API')),
-    ]
-else:
-    urlpatterns = []
+app_name = 'rest_framework'
+urlpatterns = [
+    path('login/', views.LoginView.as_view(template_name='rest_framework/login.html'), name='login'),
+    path('logout/', views.LogoutView.as_view(), name='logout'),
+]
